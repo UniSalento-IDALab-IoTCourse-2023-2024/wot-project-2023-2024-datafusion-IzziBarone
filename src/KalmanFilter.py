@@ -6,36 +6,8 @@ import ResultsPerformance as rp
 
 class KalmanFilter:
     """
-        A class to represent a Kalman Filter for tracking and predicting the state of a dynamic system.
-
-        Attributes:
-            dt (float): Time step between measurements.
-            Q (numpy.ndarray): Process noise covariance matrix.
-            R_pos (numpy.ndarray): Observation noise covariance matrix for position measurements.
-            R_imu_acc (numpy.ndarray): Observation noise covariance matrix for IMU acceleration measurements.
-            R_imu_rot (numpy.ndarray): Observation noise covariance matrix for IMU rotation measurements.
-            R_imu_ang_vel (numpy.ndarray): Observation noise covariance matrix for IMU angular velocity measurements.
-            x (numpy.ndarray): Initial state estimate.
-            P (numpy.ndarray): Initial estimate covariance matrix.
-            H_pos (numpy.ndarray): Measurement matrix for position measurements.
-            H_imu_acc (numpy.ndarray): Measurement matrix for IMU acceleration measurements.
-            H_imu_rot (numpy.ndarray): Measurement matrix for IMU rotation measurements.
-            H_imu_ang_vel (numpy.ndarray): Measurement matrix for IMU angular velocity measurements.
-            _F (numpy.ndarray): State transition matrix.
-
-        Methods:
-            predict():
-                Predicts the next state of the system using the model dynamics.
-
-            update(z, H, R):
-                Updates the state estimate using a new measurement.
-
-            apply_filter(observations_pos, observations_imu_acc, observations_imu_rot, observations_imu_ang_vel):
-                Applies the Kalman filter to a series of measurements.
-
-            rotation_matrix(roll, pitch, yaw):
-                Calculates the rotation matrix from roll, pitch, and yaw angles.
-        """
+    from https://doi.org/10.1016/j.future.2022.09.003
+    """
 
     def __init__(self, init_state):
         """
@@ -43,43 +15,44 @@ class KalmanFilter:
         :param dt: Time step between measurements.
         :param initial_state: Initial state estimate.
         """
-        self.Q = np.eye(3) * 100  # Covarianza del rumore di processo
-        self.R_pos = np.eye(2) * 10000  # Covarianza del rumore di osservazione per la posizione stimata
+        self.Q = np.eye(3) * 0.05  # Covarianza del rumore di processo
+        self.R_pos = np.eye(2) * 2  # Covarianza del rumore di osservazione per la posizione stimata
         self.x = init_state
-        self.P = np.eye(3) * 0.01
+        self.P = np.eye(3) * 1
 
         self.H_pos = np.array([[1, 0, 0],
                                [0, 1, 0]])
 
-        self._F = np.eye(3)
-
     def predict(self, step_length, heading):
         """
-            Predicts the next state of the system using the state transition matrix (F).
+            Predicts the next state of the system based on the given step length and heading.
 
-            This method updates the state estimate (x) and the estimate covariance (P)
-            based on the model's dynamics. The process noise covariance (Q) is also added
-            to the estimate covariance to account for the uncertainty in the process.
-        """
+            This method updates the state vector `self.x` and the state covariance matrix `self.P`
+            by applying the motion model. The motion model incorporates the step length and heading
+            to predict the new position and heading. Additionally, random noise is added to simulate
+            the process noise in the prediction.
+
+            Parameters:
+            - step_length: The length of the step taken in the direction of the heading.
+            - heading: The direction of the movement in degrees.
+
+            The method updates the state vector `self.x` with the predicted position and heading,
+            and it updates the state covariance matrix `self.P` to reflect the uncertainty of the prediction.
+            """
         # Aggiornare lo stato con la lunghezza del passo e l'heading
         delta_x = step_length * np.cos(np.deg2rad(heading))
         delta_y = step_length * np.sin(np.deg2rad(heading))
 
-        noise_delta_x = np.random.normal(loc=0, scale=0.001)
+        noise_delta_x = np.random.normal(loc=0, scale=0.00001)
         noise_delta_y = np.random.normal(loc=0, scale=0.001)
         noise_heading = np.random.normal(loc=0, scale=0.1)
-
-        # Matrice di transizione dello stato
-        self._F = np.array([[1, 0, -delta_y],
-                            [0, 1, delta_x],
-                            [0, 0, 1]])
 
         # Predizione dello stato
         self.x[0] += delta_x + noise_delta_x
         self.x[1] += delta_y + noise_delta_y
         self.x[2] = heading + noise_heading
 
-        self.P = np.dot(np.dot(self._F, self.P), self._F.T) + self.Q
+        self.P += self.Q
 
     def update(self, z, H, R):
         """
@@ -104,15 +77,14 @@ class KalmanFilter:
             Applies the Kalman filter to a series of measurements.
 
             :param observations_pos: Array of position measurements.
-            :param imu_data: Array of IMU measurements (acceleration, rotation, angular velocity).
+            :param imu_data: Array of IMU measurements (stride_lenghts, headings).
             :param window_size: Size of the time window (ms) for processing IMU data.
 
             :return: A numpy array of estimated positions after applying the Kalman filter to the measurements.
 
             This method sequentially processes each measurement, updating the state estimate
             and estimate covariance with each new measurement. It handles different types of
-            measurements (position, IMU acceleration, IMU rotation, IMU angular velocity) by
-            using the appropriate measurement matrix (H) and noise covariance (R) for each.
+            measurements (position, IMU[stride lenghts and headings]) and updates the state estimate accordingly.
         """
         estimated_positions = []
         innovations = []
@@ -131,7 +103,6 @@ class KalmanFilter:
                 heading = imu_observation[2]
                 self.predict(stride_length, heading)
 
-
             # Aggiornamento con i dati di posizione WiFi/BLE
             innovation = self.update(observations_pos[i, 1:], self.H_pos, self.R_pos)
             innovations.append(innovation.flatten())
@@ -140,33 +111,14 @@ class KalmanFilter:
 
         return np.array(estimated_positions)
 
-    @staticmethod
-    def rotation_matrix(roll, pitch, yaw):
-        """
-        Calculates the rotation matrix from roll, pitch, and yaw angles.
-        :param roll:
-        :param pitch:
-        :param yaw:
-        :return: Rotation matrix
-        """
-        R_matrix = np.array([
-            [np.cos(pitch) * np.cos(yaw), np.cos(pitch) * np.sin(yaw), -np.sin(pitch)],
-            [np.sin(roll) * np.sin(pitch) * np.cos(yaw) - np.cos(roll) * np.sin(yaw),
-             np.sin(roll) * np.sin(pitch) * np.sin(yaw) + np.cos(roll) * np.cos(yaw),
-             np.sin(roll) * np.cos(pitch)],
-            [np.cos(roll) * np.sin(pitch) * np.cos(yaw) + np.sin(roll) * np.sin(yaw),
-             np.cos(roll) * np.sin(pitch) * np.sin(yaw) - np.sin(roll) * np.cos(yaw),
-             np.cos(roll) * np.cos(pitch)]
-        ])
-        return R_matrix
-
 
 obs_pos = pd.read_csv("../data/positions/merged_positions.csv")
 # Convert TIMESTAMP datetime column in milliseconds
 obs_pos['TIMESTAMP'] = obs_pos['TIMESTAMP'].astype(int)
 obs_pos = obs_pos.sort_values(by='TIMESTAMP')
 
-imu_data = pd.read_csv("../data/processed/imu_pos_estimate/stride_heading.csv")
+#imu_data = pd.read_csv("../data/processed/imu_pos_estimate/stride_heading.csv")
+imu_data = pd.read_csv("../data/processed/imu_chain/merged_data.csv")
 imu_data['TIMESTAMP'] = imu_data['TIMESTAMP'].astype(int)
 imu_data = imu_data.sort_values(by='TIMESTAMP')
 
@@ -180,7 +132,7 @@ initial_state[1] = initial_pos[1]
 
 position_data_np = obs_pos[['TIMESTAMP', 'x', 'y']].to_numpy()
 imu_data_np = imu_data[
-    ['TIMESTAMP', 'STRIDE_LENGTH', 'HEADING']].to_numpy()
+    ['TIMESTAMP', 'STRIDE_LENGTH', 'HEADING_MAG']].to_numpy()
 
 kalman_filter = KalmanFilter(init_state=initial_state)
 estimated_positions = kalman_filter.apply_filter(position_data_np, imu_data_np, window_size=500)

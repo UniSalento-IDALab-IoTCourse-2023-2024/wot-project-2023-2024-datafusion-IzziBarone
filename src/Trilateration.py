@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
 
+
 # https://github.com/lemmingapex/trilateration
 
 class TrilaterationFunction:
@@ -64,6 +65,7 @@ def trilateration_classic(p1, p2, p3, d1, d2, d3):
     pos = np.linalg.solve(A, B)
     return pos
 
+
 def select_best(row, beacon_columns, beacon_positions):
     d_values = row[beacon_columns]
     top_beacons = d_values.nsmallest(3).index
@@ -72,7 +74,6 @@ def select_best(row, beacon_columns, beacon_positions):
     top_distances = [row[beacon] for beacon in top_beacons]
 
     return top_positions, top_distances
-
 
 
 data = pd.read_csv('../data/distances/combined_fingerprints_distance.csv')
@@ -86,11 +87,11 @@ print(beacon_columns)
 
 positions = []
 for index, row in data.iterrows():
-    position,distances = select_best(row, beacon_columns, beacon_positions)
+    position, distances = select_best(row, beacon_columns, beacon_positions)
     estimate = trilateration(position, distances)
-    positions.append((row["TIMESTAMP"],estimate[0], estimate[1]))
+    positions.append((row["TIMESTAMP"], estimate[0], estimate[1]))
 
-pos_df = pd.DataFrame(positions, columns=['TIMESTAMP','x', 'y'])
+pos_df = pd.DataFrame(positions, columns=['TIMESTAMP', 'x', 'y'])
 pos_df['TIMESTAMP'] = pos_df['TIMESTAMP'].astype(int)
 pos_df.to_csv('../data/positions/estimated_positions.csv', index=False)
 
